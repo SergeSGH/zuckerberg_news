@@ -1,15 +1,15 @@
-from django.shortcuts import get_object_or_404
-from rest_framework import filters, viewsets, status
-from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated, AllowAny
-from rest_framework.decorators import action
 from django.contrib.auth import get_user_model
+from django.shortcuts import get_object_or_404
+from rest_framework import filters, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import (IsAuthenticated,
+                                        IsAuthenticatedOrReadOnly)
+from rest_framework.response import Response
 
-from news.models import User, News, IsFavorite, Score
-from .permissions import IsAuthor, ReadOnly
+from news.models import IsFavorite, News, Score, User
 from .pagination import NewsPagination
-from .serializers import (NewsSerializer,
-                          IsFavoriteSerializer, ScoreSerializer)
-
+from .permissions import IsAuthor, ReadOnly
+from .serializers import NewsSerializer, NewsSerializerShort, ScoreSerializer
 
 User = get_user_model()
 
@@ -24,9 +24,6 @@ class NewsViewSet(viewsets.ModelViewSet):
     pagination_class = NewsPagination
     lookup_field = 'slug'
 
-    #def perform_create(self, serializer):
-    #    serializer.save(author=self.request.user)
-
     @action(
         detail=True,
         methods=('post', 'delete'),
@@ -35,40 +32,120 @@ class NewsViewSet(viewsets.ModelViewSet):
     )
     def favorite(self, request, **kwargs):
         news = get_object_or_404(News, slug=self.kwargs.get('slug'))
-        serializer = NewsSerializer(news)
-        return self.sub_create_del(request, IsFavorite, serializer, news)
-
-    def sub_create_del(self, request, model, serializer, news):
         if request.method == 'POST':
-            if model.objects.filter(
-                news=news, author=self.request.user
+            if IsFavorite.objects.filter(
+                news=news, user=self.request.user
             ).exists():
                 return Response(
                     'Новость уже в избранном',
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            model.objects.create(
-                news=news, author=self.request.user
+            IsFavorite.objects.create(
+                news=news, user=self.request.user
             )
             return Response(
-                serializer.data,
+                'Новость добавлена в избранное',
                 status=status.HTTP_201_CREATED
             )
-        if not model.objects.filter(
-            news=news, author=self.request.user
+        if not IsFavorite.objects.filter(
+            news=news, user=self.request.user
         ).exists():
             return Response(
-                'Новости',
+                'Новости нет в избранном',
                 status=status.HTTP_400_BAD_REQUEST
             )
-        record = model.objects.filter(
-            news=news, author=self.request.user
+        record = IsFavorite.objects.filter(
+            news=news, user=self.request.user
         )
         record.delete()
         return Response(
-            'Новость удалена из избранного',
             status=status.HTTP_204_NO_CONTENT
         )
+
+    @action(
+        detail=True,
+        methods=('get', 'post', 'patch', 'delete'),
+        url_path='score',
+        permission_classes=(IsAuthenticated,),
+    )
+    def score(self, request, **kwargs):
+        news = get_object_or_404(News, slug=self.kwargs.get('slug'))
+        if request.method == 'GET':
+            if Score.objects.filter(
+                news=news, author=self.request.user
+            ).exists():
+                score = Score.objects.get(news=news, author=self.request.user)
+                serializer = ScoreSerializer(score)
+                return Response(
+                    serializer.data,
+                    status=status.HTTP_200_OK
+                )
+            return Response(
+                    'Оценки нет',
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        elif request.method == 'POST':
+            if Score.objects.filter(
+                news=news, author=self.request.user
+            ).exists():
+                return Response(
+                    'Оценка уже поставлена',
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            serializer = ScoreSerializer(data=request.data)
+            if serializer.is_valid():
+                serializer.save(
+                    author=self.request.user,
+                    news=news
+                )
+                return Response(
+                    serializer.data,
+                    status=status.HTTP_201_CREATED
+                )
+            return Response(
+                'kk',
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        elif request.method == 'PATCH':
+            if not Score.objects.filter(
+                news=news, author=self.request.user
+            ).exists():
+                return Response(
+                    'Оценки нет',
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            score = Score.objects.get(
+                news=news, author=self.request.user
+            )
+            serializer = ScoreSerializer(score, data=self.request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save(
+                    author=self.request.user,
+                    news=news
+                )
+                return Response(
+                    serializer.data,
+                    status=status.HTTP_201_CREATED
+                )
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        else:
+            if not Score.objects.filter(
+                news=news, author=self.request.user
+            ).exists():
+                return Response(
+                    'Оценки нет',
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            score=Score.objects.get(
+                news=news, author=self.request.user
+            )
+            score.delete()
+            return Response(
+                status=status.HTTP_204_NO_CONTENT
+            )
 
 
 class ScoreViewSet(viewsets.ModelViewSet):
@@ -86,7 +163,6 @@ class ScoreViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         news_slug = self.kwargs.get('news_slug')
-
         news = get_object_or_404(News, slug=news_slug)
         print(news.brief)
         if not Score.objects.filter(
@@ -97,15 +173,11 @@ class ScoreViewSet(viewsets.ModelViewSet):
                 news=news
             )
 
-        #return Response(
-        #    'Новости',
-        #    status=status.HTTP_400_BAD_REQUEST
-        #)
-
-    def perform_update(self, serializer):
+    def perform_update(self, obj, serializer):
         news_slug = self.kwargs.get('news_slug')
         news = get_object_or_404(News, slug=news_slug)
-        serializer.save(
-            author=self.request.user
-            #post=post
+        serializer = serializer(
+            obj, data=self.request.data, partial=True
         )
+        serializer.save()
+
