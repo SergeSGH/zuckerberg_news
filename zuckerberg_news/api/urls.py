@@ -1,17 +1,16 @@
 from django.urls import include, path
 from rest_framework import routers
 
-from .views import CommentViewSet, FollowViewSet, GroupViewSet, PostViewSet
+from .views import NewsViewSet, ScoreViewSet
 
 router_v1 = routers.DefaultRouter()
-router_v1.register('posts', PostViewSet, basename='posts')
-router_v1.register('groups', GroupViewSet, basename='groups')
-router_v1.register('follow', FollowViewSet, basename='follow')
-router_v1.register(r'^posts/(?P<post_pk>\d+)/comments',
-                   CommentViewSet, basename=r'^comments')
+#router_v1.register('users', UserViewSet, basename='users')
+router_v1.register('news', NewsViewSet, basename='news')
+router_v1.register(r'^news/(?P<news_slug>\w+)/score',
+                   ScoreViewSet, basename=r'^score')
 
 urlpatterns = [
-    path('v1/', include(router_v1.urls)),
-    path('v1/', include('djoser.urls')),
-    path('v1/', include('djoser.urls.jwt')),
+    path('', include(router_v1.urls)),
+    path('auth/', include('djoser.urls')),
+    path('auth/', include('djoser.urls.jwt')),
 ]

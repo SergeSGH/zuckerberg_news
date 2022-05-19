@@ -1,69 +1,111 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import filters, permissions, viewsets
-from rest_framework.pagination import LimitOffsetPagination
+from rest_framework import filters, viewsets, status
+from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated, AllowAny
+from rest_framework.decorators import action
+from django.contrib.auth import get_user_model
 
-from posts.models import Group, Post, User
-from .permissions import IsOwner, OwnerOrReadOnly, ReadOnly
-from .serializers import (CommentSerializer, FollowSerializer, GroupSerializer,
-                          PostSerializer, UserSerializer)
-
-
-class UserViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
+from news.models import User, News, IsFavorite, Score
+from .permissions import IsAuthor, ReadOnly
+from .pagination import NewsPagination
+from .serializers import (NewsSerializer,
+                          IsFavoriteSerializer, ScoreSerializer)
 
 
-class GroupViewSet(viewsets.ReadOnlyModelViewSet):
-    permission_classes = (ReadOnly,)
-    queryset = Group.objects.all()
-    serializer_class = GroupSerializer
+User = get_user_model()
 
 
-class PostViewSet(viewsets.ModelViewSet):
-    serializer_class = PostSerializer
-    permission_classes = (OwnerOrReadOnly,)
-    queryset = Post.objects.all()
-    pagination_class = LimitOffsetPagination
+class NewsViewSet(viewsets.ModelViewSet):
+    serializer_class = NewsSerializer
+    permission_classes = (
+        IsAuthenticatedOrReadOnly,
+        ReadOnly | IsAuthor,
+    )
+    queryset = News.objects.all()
+    pagination_class = NewsPagination
+    lookup_field = 'slug'
 
     #def perform_create(self, serializer):
     #    serializer.save(author=self.request.user)
 
+    @action(
+        detail=True,
+        methods=('post', 'delete'),
+        url_path='favorite',
+        permission_classes=(IsAuthenticated,),
+    )
+    def favorite(self, request, **kwargs):
+        news = get_object_or_404(News, slug=self.kwargs.get('slug'))
+        serializer = NewsSerializer(news)
+        return self.sub_create_del(request, IsFavorite, serializer, news)
 
-class CommentViewSet(viewsets.ModelViewSet):
-    serializer_class = CommentSerializer
-    permission_classes = (OwnerOrReadOnly,)
+    def sub_create_del(self, request, model, serializer, news):
+        if request.method == 'POST':
+            if model.objects.filter(
+                news=news, author=self.request.user
+            ).exists():
+                return Response(
+                    'Новость уже в избранном',
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            model.objects.create(
+                news=news, author=self.request.user
+            )
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED
+            )
+        if not model.objects.filter(
+            news=news, author=self.request.user
+        ).exists():
+            return Response(
+                'Новости',
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        record = model.objects.filter(
+            news=news, author=self.request.user
+        )
+        record.delete()
+        return Response(
+            'Новость удалена из избранного',
+            status=status.HTTP_204_NO_CONTENT
+        )
+
+
+class ScoreViewSet(viewsets.ModelViewSet):
+    serializer_class = ScoreSerializer
+    permission_classes = (
+        IsAuthenticatedOrReadOnly,
+        ReadOnly | IsAuthor,
+    )
 
     def get_queryset(self):
-        post_id = self.kwargs.get('post_pk')
-        post = get_object_or_404(Post, id=post_id)
-        queryset = post.comments.all()
+        news_slug = self.kwargs.get('news_slug')
+        news = get_object_or_404(News, slug=news_slug)
+        queryset = news.scores.all()
         return queryset
 
     def perform_create(self, serializer):
-        post_id = self.kwargs.get('post_pk')
-        post = get_object_or_404(Post, id=post_id)
+        news_slug = self.kwargs.get('news_slug')
+
+        news = get_object_or_404(News, slug=news_slug)
+        print(news.brief)
+        if not Score.objects.filter(
+            author=self.request.user, news=news
+        ).exists():
+            serializer.save(
+                author=self.request.user,
+                news=news
+            )
+
+        #return Response(
+        #    'Новости',
+        #    status=status.HTTP_400_BAD_REQUEST
+        #)
+
+    def perform_update(self, serializer):
+        news_slug = self.kwargs.get('news_slug')
+        news = get_object_or_404(News, slug=news_slug)
         serializer.save(
             author=self.request.user
             #post=post
         )
-
-
-class FollowViewSet(viewsets.ModelViewSet):
-    serializer_class = FollowSerializer
-    permission_classes = (IsOwner, permissions.IsAuthenticated)
-    filter_backends = (filters.SearchFilter,)
-    search_fields = ('following__username',)
-
-    def get_queryset(self):
-        user = self.request.user
-        queryset = user.following.all()
-        return queryset
-
-    #def perform_create(self, serializer):
-    #    following = get_object_or_404(
-    #        User, username=self.request.data['following']
-    #    )
-    #    serializer.save(
-            #user=self.request.user,
-    #        following=following
-    #    )

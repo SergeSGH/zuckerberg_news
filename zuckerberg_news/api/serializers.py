@@ -1,81 +1,91 @@
-from django.db.models.query import QuerySet
 from rest_framework import serializers
-from rest_framework.relations import SlugRelatedField
 from rest_framework.validators import UniqueTogetherValidator
 
-from posts.models import Comment, Follow, Group, Post, User
+from news.models import News, IsFavorite, Score
 
 
-class UserSerializer(serializers.ModelSerializer):
-
-    class Meta:
-        model = User
-        fields = ('id', 'username')
+from django.contrib.auth import get_user_model
 
 
-class GroupSerializer(serializers.ModelSerializer):
-
-    class Meta:
-        model = Group
-        fields = ('id', 'title', 'slug', 'description')
+User = get_user_model()
 
 
-class PostSerializer(serializers.ModelSerializer):
-    author = SlugRelatedField(
+class NewsSerializer(serializers.ModelSerializer):
+    author = serializers.SlugRelatedField(
         slug_field='username',
         default=serializers.CurrentUserDefault(),
         queryset=User.objects.all()
     )
+    score = serializers.SerializerMethodField()
+    is_favorite = serializers.SerializerMethodField()
 
     class Meta:
-        fields = '__all__'
-        model = Post
+        fields = (
+            'slug', 'title', 'author',
+            'brief', 'contents', 'views',
+            'rating', 'score', 'is_favorite'
+        )
+        read_only_fields = ('views', 'rating')
+        model = News
+
+    def get_score(self, obj):
+        user = self.context['request'].user
+        if user.is_authenticated:
+            if Score.objects.filter(
+                author=user, news=obj
+            ).exists():
+                return Score.objects.get(
+                    author=user, news=obj
+                ).score
+            return None
+        return None
+
+    def get_is_favorite(self, obj):
+        user = self.context['request'].user
+        if user.is_authenticated:
+            return IsFavorite.objects.filter(
+                user=user, news=obj
+            ).exists()
+        return False
 
 
-class CommentSerializer(serializers.ModelSerializer):
-    author = SlugRelatedField(
-        read_only=True,
-        #queryset=User.objects.all(),
-        slug_field='username',
-        default=serializers.CurrentUserDefault()
-    )
-    post = serializers.PrimaryKeyRelatedField(
-        #read_only=True,
-        queryset=Post.objects.all()
-    )
-
-    class Meta:
-        fields = ('id', 'author', 'post', 'text', 'created')
-        model = Comment
-
-
-class FollowSerializer(serializers.ModelSerializer):
-    user = SlugRelatedField(
+class IsFavoriteSerializer(serializers.ModelSerializer):
+    user = serializers.SlugRelatedField(
         #read_only=True,
         queryset=User.objects.all(),
         slug_field='username',
         default=serializers.CurrentUserDefault()
     )
-    following = serializers.SlugRelatedField(
-        slug_field='username',
-        queryset=User.objects.all()
+    news = serializers.SlugRelatedField(
+        slug_field='slug',
+        queryset=News.objects.all()
     )
 
-    def validate_following(self, following):
-        username = self.context['request'].user
-        if username == following:
-            raise serializers.ValidationError(
-                'Нельзя подписаться на самого себя!'
-            )
-        return following
-
     class Meta:
-        fields = ('user', 'following')
-        model = Follow
+        fields = ('user', 'news')
+        model = IsFavorite
 
         validators = [
             UniqueTogetherValidator(
-                queryset=Follow.objects.all(),
-                fields=['user', 'following']
+                queryset=IsFavorite.objects.all(),
+                fields=['user', 'news']
             )
         ]
+
+
+class ScoreSerializer(serializers.ModelSerializer):
+    author = serializers.SlugRelatedField(
+        #read_only=True,
+        queryset=User.objects.all(),
+        slug_field='username',
+        default=serializers.CurrentUserDefault()
+    )
+    #news = serializers.PrimaryKeyRelatedField(
+    #    #read_only=True,
+    #    queryset=News.objects.all()
+    #)
+
+    class Meta:
+        fields = ('author', 'score')
+        model = Score
+
