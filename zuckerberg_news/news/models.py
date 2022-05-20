@@ -29,6 +29,10 @@ class News(models.Model):
         help_text='Заголовок транслитом',
         unique=True
     )
+    pub_date = models.DateTimeField(
+        'Дата публикации',
+        auto_now_add=True
+    )
     title = models.CharField(
         'Заголовок',
         help_text='Заголовок',
@@ -67,6 +71,7 @@ class News(models.Model):
     )
 
     class Meta:
+        ordering = ['-pub_date']
         verbose_name = 'Новость'
         verbose_name_plural = 'Новости'
 

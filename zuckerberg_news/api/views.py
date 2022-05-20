@@ -5,6 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import (IsAuthenticated,
                                         IsAuthenticatedOrReadOnly)
 from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
+from .filters import NewsFilter
 
 from news.models import IsFavorite, News, Score, User
 from .pagination import NewsPagination
@@ -21,8 +23,21 @@ class NewsViewSet(viewsets.ModelViewSet):
         ReadOnly | IsAuthor,
     )
     queryset = News.objects.all()
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter)
+    filterset_class = NewsFilter
+    ordering_fields = ('pub_date', 'views', 'rating')
     pagination_class = NewsPagination
     lookup_field = 'slug'
+
+
+    def retrieve(self, request, *args, **kwargs):
+        news = self.get_object()
+        if not news.views:
+            news.views = 1
+        else:
+            news.views += 1
+        news.save()
+        return super().retrieve(self, request, *args, **kwargs)
 
     @action(
         detail=True,
@@ -146,38 +161,3 @@ class NewsViewSet(viewsets.ModelViewSet):
             return Response(
                 status=status.HTTP_204_NO_CONTENT
             )
-
-
-class ScoreViewSet(viewsets.ModelViewSet):
-    serializer_class = ScoreSerializer
-    permission_classes = (
-        IsAuthenticatedOrReadOnly,
-        ReadOnly | IsAuthor,
-    )
-
-    def get_queryset(self):
-        news_slug = self.kwargs.get('news_slug')
-        news = get_object_or_404(News, slug=news_slug)
-        queryset = news.scores.all()
-        return queryset
-
-    def perform_create(self, serializer):
-        news_slug = self.kwargs.get('news_slug')
-        news = get_object_or_404(News, slug=news_slug)
-        print(news.brief)
-        if not Score.objects.filter(
-            author=self.request.user, news=news
-        ).exists():
-            serializer.save(
-                author=self.request.user,
-                news=news
-            )
-
-    def perform_update(self, obj, serializer):
-        news_slug = self.kwargs.get('news_slug')
-        news = get_object_or_404(News, slug=news_slug)
-        serializer = serializer(
-            obj, data=self.request.data, partial=True
-        )
-        serializer.save()
-
