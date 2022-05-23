@@ -8,10 +8,11 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from .filters import NewsFilter
 
+from django.db.models import Avg
 from news.models import IsFavorite, News, Score, User
 from .pagination import NewsPagination
 from .permissions import IsAuthor, ReadOnly
-from .serializers import NewsSerializer, NewsSerializerShort, ScoreSerializer
+from .serializers import NewsSerializer, ScoreSerializer
 
 User = get_user_model()
 
@@ -28,7 +29,6 @@ class NewsViewSet(viewsets.ModelViewSet):
     ordering_fields = ('pub_date', 'views', 'rating')
     pagination_class = NewsPagination
     lookup_field = 'slug'
-
 
     def retrieve(self, request, *args, **kwargs):
         news = self.get_object()
@@ -96,9 +96,9 @@ class NewsViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_200_OK
                 )
             return Response(
-                    'Оценки нет',
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                'Оценки нет',
+                status=status.HTTP_400_BAD_REQUEST
+            )
         elif request.method == 'POST':
             if Score.objects.filter(
                 news=news, author=self.request.user
@@ -113,12 +113,14 @@ class NewsViewSet(viewsets.ModelViewSet):
                     author=self.request.user,
                     news=news
                 )
+                news.rating = news.scores.aggregate(Avg('score'))['score__avg']
+                news.save()
                 return Response(
                     serializer.data,
                     status=status.HTTP_201_CREATED
                 )
             return Response(
-                'kk',
+                serializer.errors,
                 status=status.HTTP_400_BAD_REQUEST
             )
         elif request.method == 'PATCH':
@@ -132,12 +134,17 @@ class NewsViewSet(viewsets.ModelViewSet):
             score = Score.objects.get(
                 news=news, author=self.request.user
             )
-            serializer = ScoreSerializer(score, data=self.request.data, partial=True)
+            serializer = ScoreSerializer(
+                score, data=self.request.data,
+                partial=True
+            )
             if serializer.is_valid():
                 serializer.save(
                     author=self.request.user,
                     news=news
                 )
+                news.rating = news.scores.aggregate(Avg('score'))['score__avg']
+                news.save()
                 return Response(
                     serializer.data,
                     status=status.HTTP_201_CREATED
@@ -154,10 +161,12 @@ class NewsViewSet(viewsets.ModelViewSet):
                     'Оценки нет',
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            score=Score.objects.get(
+            score = Score.objects.get(
                 news=news, author=self.request.user
             )
             score.delete()
+            news.rating = news.scores.aggregate(Avg('score'))['score__avg']
+            news.save()
             return Response(
                 status=status.HTTP_204_NO_CONTENT
             )

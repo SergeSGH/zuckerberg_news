@@ -6,7 +6,6 @@ from news.models import IsFavorite, News, Score
 User = get_user_model()
 
 
-
 class NewsSerializerShort(serializers.ModelSerializer):
 
     class Meta:
@@ -32,9 +31,9 @@ class NewsSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'slug', 'pub_date', 'title', 'author',
             'brief', 'contents', 'views',
-            'rating', 'score', 'is_favorite'
+            'score', 'is_favorite'
         )
-        read_only_fields = ('views', 'rating')
+        read_only_fields = ('views',)
         model = News
 
     def get_score(self, obj):

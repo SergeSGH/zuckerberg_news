@@ -36,7 +36,7 @@ class TestScoreAPI:
 
     @pytest.mark.django_db(transaction=True)
     def test_score_patch(self, user_client, news, score_1_news):
-        data = {'score': 0}
+        data = {'score': 1}
         response = user_client.patch(f'/api/news/{news.slug}/score/', data=data)
 
         assert response.status_code == 201, (

@@ -72,7 +72,7 @@ def score_1_news(news, user):
 
 
 @pytest.fixture
-def score_2_news(news, another_user):
+def score_2_news(news, user_2):
     from news.models import Score
     return Score.objects.create(author=user_2, news=news, score=-1)
 
